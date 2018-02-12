@@ -16,7 +16,13 @@ The data sets I had to work with as part of this project were three text files c
 
 The first two steps are accomplished in the **CapstoneProject.R script**.
 
-3.) Unigram, bigrams, trigrams and fourgrams are extracted from the corpus. They are extracted in the form of data frames and are ordered in decreasing order of frequency. This is accomplished in the **ExtractNGram.R** script.
+3.) Unigram, bigrams, trigrams and fourgrams are extracted from the corpus. They are extracted in the form of data frames and are ordered in decreasing order of frequency. These dataframes were saved as **unigram.Rdata, bigram.Rdata, trigram.Rdata and fourgram.Rdata** This is accomplished in the **ExtractNGram.R** script.
 
+4.) The user specified input string is cleansed using the **CleanInputString.R** script.
 
+5.) The predicition algorithm is implemented in the the **WordPrediction.R** script.
+
+6.) To test the accuracy of the model, a random test set was generated from the original text files. This was accomplished using the **GeneratingTestData.R**.
+
+7.) The timing and accuracy of the model was tested in the **TimeAndAccuracy.R** script. 
 
