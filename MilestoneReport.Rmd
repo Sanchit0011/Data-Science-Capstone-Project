@@ -1,0 +1,289 @@
+---
+title: "Capstone Project Milestone Report"
+author: "Sanchit Sharma"
+date: "13 January 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r javap, include = FALSE}
+
+options(java.parameters = "- Xmx1024m")
+
+```
+
+## Summary of the report
+This report is for the Coursera Capstone Project offered by Johns Hopkins Bloomberg School of Public Health. The main objective in this course is to apply data science in the area of natural language processing. The final result of this course will be to construct a Shiny application that accepts some text inputed by the user and try to predict what the next word will be. The report explains my exploratory analysis and my goals for the eventual app and algorithm. 
+
+## Loading the required packages
+
+```{r load}
+#Loading the required packages
+library(tm)
+library(stringr)
+library(stringi)
+library(stylo)
+library(RWeka)
+library(dplyr)
+
+
+
+```
+
+## Preparing the data
+
+The data provided in the course site comprises of four sets of files (de_DE - Danish, en_US - English,fi_FI - Finnish an ru_RU - Russian), with each set containing 3 text files with texts from blogs, news sites and twitter. In this analysis we will focus on the english set of files: en_US.blogs.txt , en_US.news.txt and en_US.twitter.txt.
+
+```{r dl}
+
+fileUrl <- "https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip"
+download.file(fileUrl, destfile = "C:/CapstoneProject/projectdata")
+unzip(zipfile = "C:/CapstoneProject/projectdata", exdir = "C:/CapstoneProject") 
+
+
+
+```
+
+Now since the files are big and processing takes alot of time, we will work with random 25% subset of each file.
+
+```{r prepare}
+
+#Reading lines from the US blogs text file into R
+con <- file("C:/CapstoneProject/final/en_US/en_US.blogs.txt", "r")
+blog <- readLines(con)
+close(con)
+
+#Generating a reproducible sample subset from the US blogs text file
+set.seed(1)
+sampleblog <- blog[rbinom(length(blog)*0.25, length(blog), 0.5)]
+write.csv(sampleblog,"C:/CapstoneProject/SampleData/sampleblog.csv", row.names = FALSE,
+          col.names = FALSE)
+
+#Reading lines from the US twitter text file into R
+con1 <- file("C:/CapstoneProject/final/en_US/en_US.twitter.txt", "r")
+twitter <- readLines(con1)
+close(con1)
+
+#Generating a reproducible sample subset from the US twitter text file
+set.seed(2)
+sampletwitter <- twitter[rbinom(length(twitter)*0.25, length(twitter), 0.5)]
+write.csv(sampletwitter,"C:/CapstoneProject/SampleData/sampletwitter.csv", row.names = FALSE,
+          col.names = FALSE)
+
+#Reading lines from the US news text file into R
+con2 <- file("C:/CapstoneProject/final/en_US/en_US.news.txt", "rb")
+news <- readLines(con2)
+close(con2)
+
+#Generating a reproducible sample subset from the US news text file
+set.seed(3)
+samplenews <- news[rbinom(length(news)*0.25, length(news), 0.5)]
+write.csv(samplenews,"C:/CapstoneProject/SampleData/samplenews.csv", row.names = FALSE,
+          col.names = FALSE)
+
+
+
+```
+
+
+## Exploring the three text files
+
+We perform exploratory analysis of the three files. The analysis includes finding the number of lines, number of characters, and number of characters which aren't white spaces in each file. We also create barplots depicting each of these statistics.
+
+```{r exp}
+
+#Displaying general statistics about the sampleblog text file
+blogStats <- stri_stats_general(sampleblog)
+blogStats
+
+#Displaying general statistics about the sampleblog text file
+newsStats <- stri_stats_general(samplenews)
+newsStats
+
+#Displaying general statistics about the sampleblog text file
+twitterStats <- stri_stats_general(sampletwitter)
+twitterStats
+
+#Combining statistics of all files in one variable
+DataStats <- rbind(blogStats, newsStats, twitterStats)
+DataStats
+
+#Converting DataStats into a data frame object
+DataStats <- as.data.frame(DataStats)
+
+#Giving rows of the DataStats data fram proper names
+rownames(DataStats) <- c("blog", "news", "twitter")
+
+#Creating a barplot depicting the number of lines in each file
+barplot(DataStats[,1], names.arg = rownames(DataStats), main = "Number of lines in each file", xlab = "File", ylab = 
+          "Number of Lines", col = c("red", "green", "blue"))
+
+#Creating a barplot depicting the number of characters in each file
+barplot(DataStats[,3], names.arg = row.names(DataStats), main = "Number of characters in each file", xlab = "File", ylab = 
+          "Number of characters", col = c("purple", "brown", "yellow"))
+
+#Creating a barplot depicting the number of  that aren't white spaces in each file
+barplot(DataStats[,4], names.arg = row.names(DataStats), main = "Number of characters that aren't white spaces in each file", xlab = "File", ylab = 
+          "Number of characters(not whitespaces)", col = c("orange", "black", "grey"))
+
+
+
+```
+
+## Building a corpus
+
+Data from the 3 files are merged together and a text corpus is built using the tm library.
+
+```{r corp}
+
+#Combining all 3 sample subsets into a Corpus
+SampleData <- VCorpus(DirSource("C:/CapstoneProject/SampleData/"), readerControl = list(language="en_US"))
+
+
+```
+
+## Exploring the corpus
+
+We perform exploratory analysis of the corpus.
+
+```{r expcorp}
+
+#Printing out the number of documents in the corpus
+length(SampleData)
+
+#Printing out the details of the corpus
+summary(SampleData)
+
+#Printing out the metadata of each document in the corpus
+meta(SampleData[[1]])
+meta(SampleData[[2]])
+meta(SampleData[[3]])
+
+#Printing out the number of characters in each document of the corpus
+length(SampleData[[1]]$content)
+length(SampleData[[2]]$content)
+length(SampleData[[3]]$content)
+
+#Printing first line of each document in the corpus
+SampleData[[1]]$content[2]
+SampleData[[2]]$content[2]
+SampleData[[3]]$content[2]
+
+
+
+```
+
+## Cleaning the corpus
+
+The text files contained within the corpus are messy, therefore we have to clean them up in order to obtain a highly accurate predictive model. Cleaning the data includes removing urls, emails, twitter tags, twitter usernames, punctuation, numbers, non alphanumeric characters, stopwords, profane words and extra white spaces. 
+
+``` {r cleancorp}
+#Removing urls from each file in the corpus
+removeUrl <- content_transformer(function(x, pattern) gsub(pattern, '', x, ignore.case = TRUE))
+SampleData <- tm_map(SampleData, removeUrl, '(ftp|http)\\S+\\s*')
+
+#Removing e-mail ids from each file in the corpus
+removeEmail <- content_transformer(function(x, pattern) str_replace_all(x, pattern, ''))
+SampleData <- tm_map(SampleData, removeEmail, "[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+")
+
+#Removing twitter tags from each file in the corpus
+removeTT <- content_transformer(function(x, pattern) gsub(pattern, '', x))
+SampleData <- tm_map(SampleData, removeTT, "RT |via")
+
+#Removing twitter hash tags from each file in the corpus
+removeHT <- content_transformer(function(x, pattern) gsub(pattern, '', x))
+SampleData <- tm_map(SampleData, removeHT, "#[a-z,A-Z]*")
+
+#Removing html entities from corpus
+removeAmp <- content_transformer(function(x, pattern) gsub(pattern, '', x))
+SampleData <- tm_map(SampleData, removeAmp, "&amp")
+
+#Removing numbers from each file in the corpus
+SampleData <- tm_map(SampleData, removeNumbers)
+
+#Removing punctuation from each file in the corpus
+SampleData <- tm_map(SampleData, removePunctuation)
+
+#Removing anything else other than english alphabet from each file in the corpus
+removeNonAlphaChar <- content_transformer(function(x, pattern) gsub(pattern, " ", x))
+SampleData <- tm_map(SampleData, removeNonAlphaChar, '[^a-zA-Z]')
+
+#Removing stop words from each file in the corpus
+SampleData <- tm_map(SampleData, removeWords, stopwords("en"))
+
+#Converting text to lower case
+SampleData <- tm_map(SampleData, content_transformer(tolower))
+
+#Removing single letters which don't make sense from each text file in corpus
+letters <- read.table("letters.txt", header = FALSE, quote = "", sep = "\n", strip.white = TRUE)
+SampleData <- tm_map(SampleData, removeWords, letters[,1])
+
+#Removing profane words from each text file in the corpus
+profaneWords <- read.table("bad_words.txt", header = FALSE, quote = "", sep = "\n", strip.white = TRUE)
+SampleData <- tm_map(SampleData, removeWords, profaneWords[,1])
+
+#Removing extra whitespace from the corpus
+SampleData <- tm_map(SampleData, stripWhitespace)
+
+```
+
+### Most frequent words in the corpus
+
+```{r freq}
+#Convert corpus into a vector of text
+myData <- txt.to.words(SampleData)
+
+#Displaying the 100 most frequent words in the entire corpus
+freqlist <- make.frequency.list(myData, head = 100)
+freqlist
+
+```
+
+## Creating unigram model and plotting the frequency of top 50 frequent words
+
+Here we find the frequency and the probabilities of each word or unigram in the corpus. We arrange them according to the descending order of their probabilities and create a barplot depicting the frequency of the top 50 most frequent words.
+
+```{r ngram}
+
+#Creating unigram model
+term_doc_mat <- TermDocumentMatrix(SampleData)
+term_doc_mat <- removeSparseTerms(term_doc_mat, 0.54) 
+a <- as.matrix(term_doc_mat)
+b <- rowSums(a)
+unigram <- as.data.frame(b)
+colnames(unigram) <- c("freq")
+unigram$term <- rownames(unigram)
+unigram$prob <-with(freq/sum(freq),data=unigram)
+unigram <- arrange(unigram,desc(prob))
+
+#Exploring the unigram model
+dim(unigram)
+summary(unigram)
+str(unigram)
+
+#Displaying first 10 rows of unigram model
+head(unigram, 10)
+
+#Displaying last 10 rows of unigram model
+tail(unigram, 10)
+
+#Plotting the frequency of top 50 words in the corpus
+barplot(unigram[1:50,1], names.arg = unigram[1:50,2], cex.names = 0.60, cex.axis = 0.70, col = "red", las = 2)
+
+
+
+```
+
+
+## Next steps for prediction and shiny app
+
+This concludes our exploratory analysis. Our next step is to finalize our predictive algorithm, and to deploy that algorithm as a shiny app.
+
+Our predictive algorithm will be based on the n-gram model with frequency lookup similar to the exploratory analysis that we have conducted above. 
+
+We will create the bigram and trigram models and use the trigram model to predict the next word. If no matching trigram can be found, then the algorithm would use the bigram model, and then the unigram model if needed. Katz backoff model is an approach we can use to handle cases where a particular ngram isnt observed within our data set.
+
+The user interface of the shiny app will consist of a text input box that will allow a user to enter a phrase. Then the app will use our algorithm to suggest the most likely next word. 
